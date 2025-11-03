@@ -8,12 +8,14 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import FSInputFile 
+from aiogram.types import FSInputFile
 from dotenv import load_dotenv
 
 CERTIFICATE_FILE = "certificate.png" 
+
 load_dotenv()
 API_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
 logging.basicConfig(level=logging.INFO)
 
 class Quest(StatesGroup):
@@ -34,7 +36,6 @@ except json.JSONDecodeError:
     exit()
 
 def get_keyboard(step_id: int):
-    """Создать Inline-клавиатуру с уникальными callback_data для текущего шага"""
     step = SCRIPT[step_id]
     
     inline_keyboard = []
@@ -51,10 +52,13 @@ def get_keyboard(step_id: int):
         
     return types.InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
 
+
 @dp.message(Command("start"))
 async def start_game(message: types.Message, state: FSMContext): 
     await state.clear() 
+    
     await state.set_state(Quest.playing) 
+    
     await state.update_data(step_id=0) 
     
     step = SCRIPT[0]
@@ -69,11 +73,11 @@ async def handle_callback(callback: types.CallbackQuery, state: FSMContext):
     
     user_data = await state.get_data()
     step_id = user_data.get("step_id") 
-    next_id_str = callback.data 
+    next_id_str = callback.data        
     
     if step_id is None or step_id not in SCRIPT:
         await callback.answer("Произошла ошибка квеста... 😢\nНачните заново /start", show_alert=True)
-        await state.clear()
+        await state.clear() 
         return
 
     step = SCRIPT[step_id]
@@ -114,9 +118,6 @@ async def handle_callback(callback: types.CallbackQuery, state: FSMContext):
                     photo=certificate, 
                     caption="Твой виртуальный «Сертификат исследователя Пушкина»! 🎉"
                 )
-            else:
-                await callback.message.answer("🎉 Сертификат должен быть здесь, но файл не найден. Не забудьте создать certificate.png!")
-
 
             await state.update_data(step_id=next_id)
             await callback.message.answer("Что дальше?", reply_markup=get_keyboard(next_id))
@@ -127,7 +128,7 @@ async def handle_callback(callback: types.CallbackQuery, state: FSMContext):
             await callback.message.answer(next_step["text"], reply_markup=get_keyboard(next_id))
     else:
         await callback.message.answer("Конец сценария 👋")
-        await state.clear()
+        await state.clear() 
 
     await callback.answer()
 
