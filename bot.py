@@ -10,7 +10,6 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from dotenv import load_dotenv
 
-
 load_dotenv()
 API_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
@@ -42,9 +41,9 @@ def get_keyboard(step_id: int):
         opt_id = opt.get("opt_id")
         
         if opt_id is not None:
-            callback_data = f"{step_id}_{opt_id}"
+            callback_data = f"{step_id}_{opt_id}" 
         else:
-            callback_data = "END_QUEST"
+            callback_data = "FALLBACK_ERROR"
 
         inline_keyboard.append([
             types.InlineKeyboardButton(text=opt["text"], callback_data=callback_data)
@@ -74,30 +73,50 @@ async def handle_callback(callback: types.CallbackQuery, state: FSMContext):
     user_data = await state.get_data()
     current_step_id = user_data.get("step_id")
     
-    try:
-        current_id, chosen_opt_id = map(int, callback.data.split('_'))
-    except ValueError:
-        await callback.answer("Ошибка данных колбэка. Начните заново /start", show_alert=True)
-        await state.clear()
-        return
-
-    if current_step_id is None or current_step_id != current_id:
-        await callback.answer("Произошла ошибка квеста... 😢\nНачните заново /start", show_alert=True)
-        await state.clear()
-        return
-
-    step = SCRIPT[current_step_id]
     chosen_option = None
     next_id = None
     
-    for opt in step["options"]:
-        if opt.get("opt_id") == chosen_opt_id:
-            chosen_option = opt
-            next_id = opt.get("next")
-            break
+    try:
+        current_id_from_callback, chosen_opt_id = map(int, callback.data.split('_'))
+        
+        if current_step_id is None or current_step_id != current_id_from_callback:
+            await callback.answer("Произошла ошибка квеста... 😢\nНачните заново /start", show_alert=True)
+            await state.clear() 
+            return
+
+        step = SCRIPT.get(current_step_id)
+        if not step:
+            await callback.answer("Произошла ошибка квеста... 😢\nНачните заново /start", show_alert=True)
+            await state.clear() 
+            return
+
+        for opt in step["options"]:
+            if opt.get("opt_id") == chosen_opt_id:
+                chosen_option = opt
+                next_id = opt.get("next")
+                break
+
+    except ValueError:
+        
+        if current_step_id == 8:
+            step = SCRIPT.get(current_step_id)
+            if step:
+                if callback.data == f"{8}_{1}": 
+                    chosen_option = step["options"][0]
+                    next_id = chosen_option.get("next") 
+                elif callback.data == f"{8}_{2}": 
+                    chosen_option = step["options"][1]
+                    next_id = chosen_option.get("next") 
+                
+        if not chosen_option:
+            await callback.answer("Ошибка! Пожалуйста, используйте кнопки последнего сообщения или начните заново /start.", show_alert=True)
+            await state.clear()
+            return
+            
 
     if not chosen_option:
-        await callback.answer("Ошибка! Не удалось найти выбранную опцию.", show_alert=True)
+        await callback.answer("Ошибка! Не удалось найти выбранную опцию. Пожалуйста, начните заново /start.", show_alert=True)
+        await state.clear()
         return
 
     await callback.message.edit_reply_markup(reply_markup=None) 
@@ -114,6 +133,7 @@ async def handle_callback(callback: types.CallbackQuery, state: FSMContext):
             await state.update_data(step_id=next_id)
             next_step = SCRIPT[next_id]
             await callback.message.answer(next_step["text"])
+            
             await callback.message.answer("Что дальше?", reply_markup=get_keyboard(next_id))
         
         elif next_id == 0:
