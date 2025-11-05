@@ -8,10 +8,8 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import FSInputFile
 from dotenv import load_dotenv
 
-CERTIFICATE_FILE = "certificate.png" 
 
 load_dotenv()
 API_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -41,10 +39,12 @@ def get_keyboard(step_id: int):
     inline_keyboard = []
     
     for opt in step["options"]:
-        if "next" in opt:
-            callback_data = str(opt["next"])
+        opt_id = opt.get("opt_id")
+        
+        if opt_id is not None:
+            callback_data = f"{step_id}_{opt_id}"
         else:
-            callback_data = "END_QUEST" 
+            callback_data = "END_QUEST"
 
         inline_keyboard.append([
             types.InlineKeyboardButton(text=opt["text"], callback_data=callback_data)
@@ -72,55 +72,56 @@ async def not_in_game(message: types.Message):
 async def handle_callback(callback: types.CallbackQuery, state: FSMContext):
     
     user_data = await state.get_data()
-    step_id = user_data.get("step_id") 
-    next_id_str = callback.data        
+    current_step_id = user_data.get("step_id")
     
-    if step_id is None or step_id not in SCRIPT:
-        await callback.answer("Произошла ошибка квеста... 😢\nНачните заново /start", show_alert=True)
-        await state.clear() 
+    try:
+        current_id, chosen_opt_id = map(int, callback.data.split('_'))
+    except ValueError:
+        await callback.answer("Ошибка данных колбэка. Начните заново /start", show_alert=True)
+        await state.clear()
         return
 
-    step = SCRIPT[step_id]
-    chosen_option = None
+    if current_step_id is None or current_step_id != current_id:
+        await callback.answer("Произошла ошибка квеста... 😢\nНачните заново /start", show_alert=True)
+        await state.clear()
+        return
 
+    step = SCRIPT[current_step_id]
+    chosen_option = None
+    next_id = None
+    
     for opt in step["options"]:
-        if "next" in opt and str(opt["next"]) == next_id_str:
+        if opt.get("opt_id") == chosen_opt_id:
             chosen_option = opt
+            next_id = opt.get("next")
             break
-        elif "next" not in opt and next_id_str == "END_QUEST":
-            chosen_option = opt
-            break
-            
+
     if not chosen_option:
-        await callback.answer("Ошибка! Пожалуйста, используйте кнопки последнего сообщения.", show_alert=True)
+        await callback.answer("Ошибка! Не удалось найти выбранную опцию.", show_alert=True)
         return
 
     await callback.message.edit_reply_markup(reply_markup=None) 
-    
     await callback.message.answer(chosen_option["reply"])
     await asyncio.sleep(0.5) 
 
-    if next_id_str != "END_QUEST":
-        next_id = int(next_id_str)
-
+    if next_id is not None:
         if next_id not in SCRIPT:
             await callback.message.answer("Ошибка в сценарии... 😢\nДавай начнём заново.")
             await state.clear()
             return
             
         if next_id == 8:
+            await state.update_data(step_id=next_id)
             next_step = SCRIPT[next_id]
             await callback.message.answer(next_step["text"])
-            
-            if os.path.exists(CERTIFICATE_FILE):
-                certificate = FSInputFile(CERTIFICATE_FILE)
-                await callback.message.answer_photo(
-                    photo=certificate, 
-                    caption="Твой виртуальный «Сертификат исследователя Пушкина»! 🎉"
-                )
-
-            await state.update_data(step_id=next_id)
             await callback.message.answer("Что дальше?", reply_markup=get_keyboard(next_id))
+        
+        elif next_id == 0:
+            await state.clear()
+            await state.set_state(Quest.playing) 
+            await state.update_data(step_id=0) 
+            next_step = SCRIPT[0]
+            await callback.message.answer(next_step["text"], reply_markup=get_keyboard(0))
         
         else:
             await state.update_data(step_id=next_id)
