@@ -33,13 +33,14 @@ except json.JSONDecodeError:
     exit()
 
 def get_keyboard(step_id: int):
+    """Создает Inline-клавиатуру, используя формат callback_data: "step_id_opt_id" """
     step = SCRIPT[step_id]
-    
+
     inline_keyboard = []
-    
+
     for opt in step["options"]:
         opt_id = opt.get("opt_id")
-        
+
         if opt_id is not None:
             callback_data = f"{step_id}_{opt_id}" 
         else:
@@ -48,18 +49,18 @@ def get_keyboard(step_id: int):
         inline_keyboard.append([
             types.InlineKeyboardButton(text=opt["text"], callback_data=callback_data)
         ])
-        
+
     return types.InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
 
 
 @dp.message(Command("start"))
 async def start_game(message: types.Message, state: FSMContext): 
     await state.clear() 
-    
+
     await state.set_state(Quest.playing) 
-    
+
     await state.update_data(step_id=0) 
-    
+
     step = SCRIPT[0]
     await message.answer(step["text"], reply_markup=get_keyboard(0))
 
@@ -69,16 +70,16 @@ async def not_in_game(message: types.Message):
 
 @dp.callback_query(Quest.playing)
 async def handle_callback(callback: types.CallbackQuery, state: FSMContext):
-    
+
     user_data = await state.get_data()
     current_step_id = user_data.get("step_id")
-    
+
     chosen_option = None
     next_id = None
-    
+
     try:
         current_id_from_callback, chosen_opt_id = map(int, callback.data.split('_'))
-        
+
         if current_step_id is None or current_step_id != current_id_from_callback:
             await callback.answer("Произошла ошибка квеста... 😢\nНачните заново /start", show_alert=True)
             await state.clear() 
@@ -97,7 +98,6 @@ async def handle_callback(callback: types.CallbackQuery, state: FSMContext):
                 break
 
     except ValueError:
-        
         if current_step_id == 8:
             step = SCRIPT.get(current_step_id)
             if step:
@@ -107,12 +107,12 @@ async def handle_callback(callback: types.CallbackQuery, state: FSMContext):
                 elif callback.data == f"{8}_{2}": 
                     chosen_option = step["options"][1]
                     next_id = chosen_option.get("next") 
-                
+
         if not chosen_option:
             await callback.answer("Ошибка! Пожалуйста, используйте кнопки последнего сообщения или начните заново /start.", show_alert=True)
             await state.clear()
             return
-            
+
 
     if not chosen_option:
         await callback.answer("Ошибка! Не удалось найти выбранную опцию. Пожалуйста, начните заново /start.", show_alert=True)
@@ -120,6 +120,9 @@ async def handle_callback(callback: types.CallbackQuery, state: FSMContext):
         return
 
     await callback.message.edit_reply_markup(reply_markup=None) 
+
+    await callback.message.answer(chosen_option["text"])
+
     await callback.message.answer(chosen_option["reply"])
     await asyncio.sleep(0.5) 
 
@@ -128,21 +131,21 @@ async def handle_callback(callback: types.CallbackQuery, state: FSMContext):
             await callback.message.answer("Ошибка в сценарии... 😢\nДавай начнём заново.")
             await state.clear()
             return
-            
+
         if next_id == 8:
             await state.update_data(step_id=next_id)
             next_step = SCRIPT[next_id]
             await callback.message.answer(next_step["text"])
-            
+
             await callback.message.answer("Что дальше?", reply_markup=get_keyboard(next_id))
-        
+
         elif next_id == 0:
             await state.clear()
             await state.set_state(Quest.playing) 
             await state.update_data(step_id=0) 
             next_step = SCRIPT[0]
             await callback.message.answer(next_step["text"], reply_markup=get_keyboard(0))
-        
+
         else:
             await state.update_data(step_id=next_id)
             next_step = SCRIPT[next_id]
